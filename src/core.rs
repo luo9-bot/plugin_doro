@@ -8,7 +8,9 @@ pub extern "C" fn plugin_main() {
     init_data();
 
     let sub = Bus::topic("luo9_message").subscribe().unwrap();
+    let ver_sub = Bus::topic("luo9_version").subscribe().unwrap();
     let topic = Bus::topic("luo9_message");
+    let ver_topic = Bus::topic("luo9_version");
 
     println!("[doro] 插件已启动，监听消息中...");
 
@@ -20,6 +22,13 @@ pub extern "C" fn plugin_main() {
                 }
             }
         }
+        // ── 版本查询 ──
+        if let Some(json) = ver_topic.pop(ver_sub) {
+            if luo9_sdk::version::is_version_query(&json) {
+                luo9_sdk::version::reply_version(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+            }
+        }
+
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
