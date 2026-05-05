@@ -1,4 +1,7 @@
-name: Build and Release Plugin
+# Luo9 插件标准构建 workflow
+# 无需修改此文件，所有信息自动从 Cargo.toml 读取
+# 修改 description 字段即可更新 Release 显示名称
+name: Build Plugin
 
 on:
   push:
@@ -8,19 +11,18 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  PLUGIN_NAME: "plugin_doro"
 
 jobs:
   build-linux:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout code
+      - name: Checkout 代码
         uses: actions/checkout@v4
 
-      - name: Setup Rust
+      - name: 安装 Rust 工具链
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry and build
+      - name: 缓存 Cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -30,33 +32,27 @@ jobs:
           key: linux-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: linux-cargo-
 
-      - name: Build release
+      - name: 构建 Release
         run: cargo build --release
 
-      - name: Verify build artifacts
-        run: |
-          echo "Linux build artifacts:"
-          ls -la target/release/libplugin_doro.so
-          file target/release/libplugin_doro.so
-
-      - name: Upload artifacts
+      - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: plugin_doro-linux
-          path: target/release/libplugin_doro.so
+          name: plugin-linux
+          path: target/release/*.so
           if-no-files-found: error
           retention-days: 7
 
   build-windows:
     runs-on: windows-latest
     steps:
-      - name: Checkout code
+      - name: Checkout 代码
         uses: actions/checkout@v4
 
-      - name: Setup Rust
+      - name: 安装 Rust 工具链
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry and build
+      - name: 缓存 Cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -66,37 +62,16 @@ jobs:
           key: windows-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: windows-cargo-
 
-      - name: Build release
+      - name: 构建 Release
         run: cargo build --release
 
-      - name: Prepare Windows artifacts
-        shell: bash
-        run: |
-          # Windows 构建会生成 libplugin_doro.dll，重命名为 plugin_doro.dll
-          if [ -f "target/release/libplugin_doro.dll" ]; then
-            mv target/release/libplugin_doro.dll target/release/plugin_doro.dll
-            echo "Renamed libplugin_doro.dll to plugin_doro.dll"
-          fi
-
-          # 检查是否有导入库文件
-          if [ -f "target/release/plugin_doro.dll.lib" ]; then
-            mv target/release/plugin_doro.dll.lib target/release/plugin_doro.lib
-            echo "Renamed plugin_doro.dll.lib to plugin_doro.lib"
-          fi
-
-      - name: Verify build artifacts
-        shell: bash
-        run: |
-          echo "Windows build artifacts:"
-          ls -la target/release/plugin_doro.* || echo "No files found"
-
-      - name: Upload artifacts
+      - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: plugin_doro-windows
+          name: plugin-windows
           path: |
-            target/release/plugin_doro.dll
-            target/release/plugin_doro.lib
+            target/release/*.dll
+            target/release/*.dll.lib
           if-no-files-found: error
           retention-days: 7
 
@@ -107,60 +82,48 @@ jobs:
       contents: write
       actions: read
     steps:
-      - name: Checkout code
+      - name: Checkout 代码
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Download all artifacts
+      - name: 下载所有产物
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Display structure
+      - name: 读取 Cargo.toml 信息
+        id: meta
         run: |
-          echo "Downloaded artifacts:"
-          ls -la artifacts/
-          echo "Linux artifacts:"
-          ls -la artifacts/plugin_doro-linux/ || echo "Not found"
-          echo "Windows artifacts:"
-          ls -la artifacts/plugin_doro-windows/ || echo "Not found"
+          CRATE_NAME=$(grep '^name' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          DESCRIPTION=$(grep '^description' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          [ -z "$DESCRIPTION" ] && DESCRIPTION="$CRATE_NAME"
+          echo "crate_name=$CRATE_NAME" >> $GITHUB_OUTPUT
+          echo "description=$DESCRIPTION" >> $GITHUB_OUTPUT
 
-      - name: Extract version from tag
+      - name: 提取版本号
         id: version
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
 
-      - name: Generate Release Notes
+      - name: 生成 Release Notes
         run: |
-          cat > RELEASE_NOTES.md << 'EOF'
-          # plugin_doro 插件发布
+          cat > RELEASE_NOTES.md << EOF
+          # ${{ steps.meta.outputs.description }} v${{ steps.version.outputs.version }}
 
-          这是一个用于获取每日 Doro 结局的插件。
-
-          ## 文件说明
-          - Linux: libplugin_doro.so (动态链接库)
-          - Windows: plugin_doro.dll (动态链接库) 和 plugin_doro.lib (导入库)
-
-          ## 使用说明
-          将对应的动态库文件放置到您的机器人插件目录中即可使用。
-
-          ### 功能特性
-          - 获取今日 Doro 结局（每日随机，每人固定）
-          - 支持添加、删除、修改、列出结局（管理员）
-          - 自动从 GitHub/Gitee 下载资源
+          ## 安装
+          将对应平台的动态库文件复制到 Luo9 Bot 插件目录即可。
           EOF
 
           if [ -f "CHANGELOG.md" ]; then
             echo "" >> RELEASE_NOTES.md
-            echo "## 更新日志" >> RELEASE_NOTES.md
+            echo "## 变更日志" >> RELEASE_NOTES.md
             echo "" >> RELEASE_NOTES.md
             cat CHANGELOG.md >> RELEASE_NOTES.md
           fi
 
-      - name: Determine if prerelease
+      - name: 判断是否为预发布
         id: prerelease
         run: |
           TAG="${{ github.ref_name }}"
@@ -170,99 +133,29 @@ jobs:
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create plugin package
-        run: |
-          echo "Creating plugin package..."
-
-          # 创建插件目录结构
-          mkdir -p plugin_package/linux
-          mkdir -p plugin_package/windows
-
-          # 复制 Linux 插件文件
-          cp artifacts/plugin_doro-linux/libplugin_doro.so plugin_package/linux/
-
-          # 复制 Windows 插件文件
-          cp artifacts/plugin_doro-windows/plugin_doro.dll plugin_package/windows/
-          cp artifacts/plugin_doro-windows/plugin_doro.lib plugin_package/windows/
-
-          # 添加 README 文件
-          cat > plugin_package/README.md << 'EOF'
-          # plugin_doro 插件
-
-          版本: ${{ github.ref_name }}
-
-          ## 安装说明
-
-          ### Linux
-          将 `linux/libplugin_doro.so` 复制到您的机器人插件目录。
-
-          ### Windows
-          将 `windows/plugin_doro.dll` 复制到您的机器人插件目录。
-
-          ## 使用命令
-          在群聊中发送: `今日doro结局`
-
-          插件会自动获取并显示今日的 Doro 结局。
-          EOF
-
-          # 创建压缩包
-          cd plugin_package
-          zip -r ../plugin_doro-${{ github.ref_name }}.zip .
-          cd ..
-
-          echo "Plugin package created:"
-          ls -la plugin_doro-${{ github.ref_name }}.zip
-
-          # 验证压缩包内容
-          echo "Verifying package contents:"
-          unzip -l plugin_doro-${{ github.ref_name }}.zip
-
-      - name: Create individual archives
-        run: |
-          echo "Creating individual archives..."
-
-          # Create Linux archive
-          cd artifacts/plugin_doro-linux
-          tar -czf ../../plugin_doro-linux-${{ github.ref_name }}.tar.gz libplugin_doro.so
-          cd ../..
-
-          # Create Windows archive
-          cd artifacts/plugin_doro-windows
-          zip -r ../../plugin_doro-windows-${{ github.ref_name }}.zip plugin_doro.dll plugin_doro.lib
-          cd ../..
-
-          echo "Archives created:"
-          ls -la plugin_doro-*.tar.gz plugin_doro-*.zip
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: plugin_doro ${{ steps.version.outputs.version }}
+          name: ${{ steps.meta.outputs.description }} ${{ steps.version.outputs.version }}
           tag_name: ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md
           files: |
-            plugin_doro-${{ github.ref_name }}.zip
-            plugin_doro-linux-${{ github.ref_name }}.tar.gz
-            plugin_doro-windows-${{ github.ref_name }}.zip
+            artifacts/plugin-linux/*
+            artifacts/plugin-windows/*
           draft: false
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Output release info
-        run: |
-          echo "Release created successfully!"
-          echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
 
   cleanup:
     needs: [create-release]
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: Delete artifacts
+      - name: 清理 CI 产物
         uses: geekyeggo/delete-artifact@v5
         with:
           name: |
-            plugin_doro-linux
-            plugin_doro-windows
+            plugin-linux
+            plugin-windows
           failOnError: false
