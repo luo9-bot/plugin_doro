@@ -4,6 +4,9 @@ version = "0.2.0"
 edition = "2024"
 description = "Doro 每日结局"
 
+[package.metadata]
+tags = ["daily"]
+
 [lib]
 crate-type = ["cdylib"]
 
